@@ -86,3 +86,7 @@ export class Vector2 {
         return this;
     }
 }
+
+export function mod(n: number, m: number): number {
+    return ((n % m) + m) % m;
+}
