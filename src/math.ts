@@ -1,9 +1,14 @@
 export class Vector2 {
     x: number;
     y: number;
-    constructor(x: number = 0, y: number = 0) {
+    constructor(x: number = 0, y?: number) {
         this.x = x;
-        this.y = y;
+        this.y = y ?? x;
+    }
+    setScalar(scalar: number): this {
+        this.x = scalar;
+        this.y = scalar;
+        return this;
     }
     setAngle(angle: number, len: number = 1): this {
         this.x = Math.cos(angle) * len;
@@ -16,11 +21,6 @@ export class Vector2 {
     copy(that: Vector2): this {
         this.x = that.x;
         this.y = that.y;
-        return this;
-    }
-    setScalar(scalar: number): this {
-        this.x = scalar;
-        this.y = scalar;
         return this;
     }
     add(that: Vector2): this {
@@ -106,6 +106,11 @@ export class Vector2 {
     map(f: (x: number) => number): this {
         this.x = f(this.x);
         this.y = f(this.y);
+        return this;
+    }
+    mod(that: Vector2): this {
+        this.x = mod(this.x, that.x);
+        this.y = mod(this.y, that.y);
         return this;
     }
 }

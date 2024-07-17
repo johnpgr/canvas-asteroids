@@ -2,22 +2,19 @@ import { Vector2 } from "./math";
 import { registerKey, unreachable } from "./utils";
 
 const FACTOR = 256;
-const SIZE = new Vector2(4 * FACTOR, 3 * FACTOR);
+const GAME_SIZE = new Vector2(4 * FACTOR, 3 * FACTOR);
 const THICKNESS = 1.5;
 const SCALE = 32;
-const TURN_SPEED = 5;
-const MOVE_SPEED = 5;
+const TURN_SPEED = 0.8;
+const MOVE_SPEED = 10;
+const DRAG = 0.015;
+const FONT_STYLE = "16px monospace";
+const FONT_COLOR = "#fff";
 
-type Direction = "forward" | "backward";
-
-type Moving = {
-    [key in Direction]: boolean;
-};
-
+type Direction = "forward";
 type TurnDirection = "left" | "right";
-type Turning = {
-    [key in TurnDirection]: boolean;
-};
+type Moving = { [key in Direction]: boolean };
+type Turning = { [key in TurnDirection]: boolean };
 
 interface Ship {
     pos: Vector2;
@@ -39,33 +36,21 @@ class State implements IState {
     }
 
     update(deltaTime: number) {
-        if (this.ship.moving.forward && !this.ship.moving.backward) {
-            this.ship.vel.add(
-                new Vector2()
-                    .setAngle(this.ship.rot)
-                    .rotate270()
-                    .scale(MOVE_SPEED),
-            );
-        } else if (this.ship.moving.backward && !this.ship.moving.forward) {
-            this.ship.vel.add(
-                new Vector2()
-                    .setAngle(this.ship.rot)
-                    .rotate90()
-                    .scale(MOVE_SPEED),
-            );
-        } else {
-            // Slow down the ship
-            this.ship.vel.scale(0.99);
-        }
+        const dirAngle = this.ship.rot + Math.PI * 0.5;
+        const direction = new Vector2().setAngle(dirAngle);
         if (this.ship.turning.left) {
-            this.ship.rot -= TURN_SPEED * deltaTime;
+            this.ship.rot -= deltaTime * Math.PI * 2 * TURN_SPEED;
         }
         if (this.ship.turning.right) {
-            this.ship.rot += TURN_SPEED * deltaTime;
+            this.ship.rot += deltaTime * Math.PI * 2 * TURN_SPEED;
+        }
+        if (this.ship.moving.forward) {
+            this.ship.vel.add(direction.scale(MOVE_SPEED * deltaTime));
         }
 
-        // Update the ship's position
-        this.ship.pos.add(this.ship.vel.clone().scale(deltaTime));
+        this.ship.vel.scale(1 - DRAG);
+        this.ship.pos.sub(this.ship.vel); //sub to move forward idk
+        this.ship.pos.mod(GAME_SIZE);
     }
 }
 
@@ -73,8 +58,8 @@ class Game {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
     state: State;
-    lastFpsUpdate: number | null = null;
-    fps: number = 0;
+    fps = 0;
+    lastFpsUpdate = 0;
 
     constructor(state: State) {
         this.canvas =
@@ -84,43 +69,18 @@ class Game {
             this.canvas.getContext("2d") ??
             unreachable("2d context not supported.");
         this.state = state;
-        this.canvas.width = SIZE.x;
-        this.canvas.height = SIZE.y;
+        this.canvas.width = GAME_SIZE.x;
+        this.canvas.height = GAME_SIZE.y;
     }
 
-    render(timestamp: number) {
+    render(timestamp: number, deltaTime: number) {
         this.drawBackground("#202020");
-        this.drawFPS(timestamp);
-        this.drawState();
-        this.drawShip();
+        this.drawDebug(deltaTime);
+        this.drawShip(timestamp);
     }
 
-    private drawState() {
-        const textPos = `Pos: x ${this.state.ship.pos.x.toFixed(2)} y ${this.state.ship.pos.y.toFixed(2)}`;
-        const textVel = `Vel: x ${this.state.ship.vel.x.toFixed(2)} y ${this.state.ship.vel.y.toFixed(2)}`;
-        const textRot = `Rot: ${this.state.ship.rot.toFixed(2)}`;
-        const textMoving = `Moving: forward ${this.state.ship.moving.forward} backward ${this.state.ship.moving.backward}`;
-        const textTurning = `Turning: left ${this.state.ship.turning.left} right ${this.state.ship.turning.right}`;
-        this.drawText(textPos, new Vector2(10, 40), "16px monospace", "#fff");
-        this.drawText(textVel, new Vector2(10, 60), "16px monospace", "#fff");
-        this.drawText(textRot, new Vector2(10, 80), "16px monospace", "#fff");
-        this.drawText(
-            textMoving,
-            new Vector2(10, 100),
-            "16px monospace",
-            "#fff",
-        );
-        this.drawText(
-            textTurning,
-            new Vector2(10, 120),
-            "16px monospace",
-            "#fff",
-        );
-    }
-
-    private drawFPS(timestamp: number, updateMs = 200) {
-        const fps = 1 / timestamp;
-        this.lastFpsUpdate = this.lastFpsUpdate || 0;
+    private drawDebug(deltaTime: number, updateMs = 100) {
+        const fps = 1 / deltaTime;
         const currentTime = performance.now();
 
         if (currentTime - this.lastFpsUpdate >= updateMs) {
@@ -128,27 +88,48 @@ class Game {
             this.lastFpsUpdate = currentTime;
         }
 
-        this.drawText(
-            `FPS: ${this.fps.toFixed(2)}`,
-            new Vector2(10, 20),
-            "16px monospace",
-            "#fff",
-        );
+        const textFps = `FPS: ${this.fps.toFixed(0)}`;
+        const textPos = `Pos: x ${this.state.ship.pos.x.toFixed(2)} y ${this.state.ship.pos.y.toFixed(2)}`;
+        const textVel = `Vel: x ${this.state.ship.vel.x.toFixed(2)} y ${this.state.ship.vel.y.toFixed(2)}`;
+        const textRot = `Rot: ${this.state.ship.rot.toFixed(2)}`;
+        const textMoving = `Moving: forward ${this.state.ship.moving.forward}`;
+        const textTurning = `Turning: left ${this.state.ship.turning.left} right ${this.state.ship.turning.right}`;
+        //prettier-ignore
+        {
+            this.drawText(textFps, new Vector2(10, 20), FONT_STYLE, FONT_COLOR);
+            this.drawText(textPos, new Vector2(10, 40), FONT_STYLE, FONT_COLOR);
+            this.drawText(textVel, new Vector2(10, 60), FONT_STYLE, FONT_COLOR);
+            this.drawText(textRot, new Vector2(10, 80), FONT_STYLE, FONT_COLOR);
+            this.drawText(textMoving, new Vector2(10, 100), FONT_STYLE, FONT_COLOR);
+            this.drawText(textTurning, new Vector2(10, 120), FONT_STYLE, FONT_COLOR);
+        }
     }
 
-    private drawShip() {
+    private drawShip(timestamp: number) {
         this.drawLines(
             this.state.ship.pos,
             this.state.ship.rot,
-            "#fff",
+            FONT_COLOR,
             THICKNESS,
             SCALE,
             new Vector2(0, -0.5),
-            new Vector2(0.4, 0.4),
-            new Vector2(0.2, 0.2),
-            new Vector2(-0.2, 0.2),
-            new Vector2(-0.4, 0.4),
+            new Vector2(0.3, 0.3),
+            new Vector2(0.1, 0.1),
+            new Vector2(-0.1, 0.1),
+            new Vector2(-0.3, 0.3),
         );
+        if (this.state.ship.moving.forward && (timestamp * 10) % 2 === 0) {
+            this.drawLines(
+                this.state.ship.pos,
+                this.state.ship.rot,
+                FONT_COLOR,
+                THICKNESS,
+                SCALE,
+                new Vector2(-0.1, 0.1),
+                new Vector2(0.0, 0.4),
+                new Vector2(0.1, 0.1),
+            );
+        }
     }
 
     private drawBackground(color: string) {
@@ -268,15 +249,15 @@ class Game {
 }
 
 function main() {
+    console.log("Hello, World!");
     let previousTimestamp = 0;
     const state = new State({
         ship: {
-            pos: SIZE.clone().scale(0.5),
+            pos: GAME_SIZE.clone().scale(0.5),
             vel: new Vector2(),
             rot: 0,
             moving: {
                 forward: false,
-                backward: false,
             },
             turning: {
                 left: false,
@@ -289,9 +270,6 @@ function main() {
     registerKey("KeyW", (down) => {
         game.state.ship.moving.forward = down;
     });
-    registerKey("KeyS", (down) => {
-        game.state.ship.moving.backward = down;
-    });
     registerKey("KeyA", (down) => {
         game.state.ship.turning.left = down;
     });
@@ -303,11 +281,10 @@ function main() {
         const dt = (timestamp - previousTimestamp) / 1000;
         previousTimestamp = timestamp;
         state.update(dt);
-        game.render(dt);
+        game.render(timestamp, dt);
         requestAnimationFrame(frame);
     };
 
-    // Start the game loop
     requestAnimationFrame(frame);
 }
 
