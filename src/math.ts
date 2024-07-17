@@ -58,10 +58,33 @@ export class Vector2 {
         const l = this.length();
         return l === 0 ? this : this.scale(1 / l);
     }
-    rot90(): this {
+    /**
+     * Rotates the vector by 90 degrees (PI/2 radians).
+     */
+    rotate90(): this {
         const oldX = this.x;
         this.x = -this.y;
         this.y = oldX;
+        return this;
+    }
+    /**
+     * Rotates the vector by 180 degrees (PI radians).
+     */
+    rotate270(): this {
+        const oldX = this.x;
+        this.x = this.y;
+        this.y = -oldX;
+        return this;
+    }
+    /**
+     * Rotates the vector by the given angle in radians.
+     */
+    rotate(angle: number): this {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = this.x;
+        this.x = x * cos - this.y * sin;
+        this.y = x * sin + this.y * cos;
         return this;
     }
     sqrDistanceTo(that: Vector2): number {
