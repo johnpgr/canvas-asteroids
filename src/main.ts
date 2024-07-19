@@ -1,20 +1,38 @@
 import { Vector2 } from "./math";
-import { registerKey, unreachable } from "./utils";
+import { prngIntInRange, registerKey, unreachable } from "./utils";
+import { alea } from "seedrandom";
 
+const PI = Math.PI
+const TAU = PI * 2;
 const FACTOR = 256;
 const GAME_SIZE = new Vector2(4 * FACTOR, 3 * FACTOR);
-const THICKNESS = 1.5;
+const THICKNESS = 2.0;
 const SCALE = 32;
 const TURN_SPEED = 0.8;
 const MOVE_SPEED = 10;
 const DRAG = 0.015;
 const FONT_STYLE = "16px monospace";
 const FONT_COLOR = "#fff";
+const BACKGROUND_COLOR = "#000";
 
 type Direction = "forward";
 type TurnDirection = "left" | "right";
 type Moving = { [key in Direction]: boolean };
 type Turning = { [key in TurnDirection]: boolean };
+
+enum AsteroidSize {
+    SMALL = SCALE * 0.8,
+    MEDIUM = SCALE * 1.5,
+    BIG = SCALE * 2.5,
+}
+
+interface Asteroid {
+    seed: string;
+    size: AsteroidSize;
+    pos: Vector2;
+    vel: Vector2;
+    rot: number;
+}
 
 interface Ship {
     pos: Vector2;
@@ -24,15 +42,14 @@ interface Ship {
     turning: Turning;
 }
 
-interface IState {
-    ship: Ship;
-}
 
-class State implements IState {
+class State {
     ship: Ship;
+    asteroids: Asteroid[];
 
-    constructor(_state: IState) {
-        Object.assign(this, _state);
+    constructor(ship: Ship, asteroids: Asteroid[]) {
+        this.ship = ship;
+        this.asteroids = asteroids;
     }
 
     update(deltaTime: number) {
@@ -74,9 +91,10 @@ class Game {
     }
 
     render(timestamp: number, deltaTime: number) {
-        this.drawBackground("#202020");
-        this.drawDebug(deltaTime);
+        this.drawBackground(BACKGROUND_COLOR);
         this.drawShip(timestamp);
+        this.state.asteroids.forEach((asteroid) => this.drawAsteroid(asteroid, timestamp));
+        // this.drawDebug(deltaTime);
     }
 
     private drawDebug(deltaTime: number, updateMs = 100) {
@@ -105,13 +123,31 @@ class Game {
         }
     }
 
+    private drawAsteroid(asteroid: Asteroid, timestamp: number) {
+        const prng = alea(asteroid.seed);
+        const n = prngIntInRange(prng, 8, 15);
+        const points: Vector2[] = [];
+
+        for (let i = 0; i < n; i++) {
+            let radius = 0.3 + (0.2 * prng.quick());
+            if(prng.quick() < 0.2) {
+                radius -= 0.15;
+            }
+
+            const angle = i * (TAU / n) + (PI * 0.125 * prng.quick());
+            points.push(new Vector2().setAngle(angle).scale(radius));
+        }
+
+        this.drawLines(asteroid.pos, asteroid.size, 0.0, FONT_COLOR, THICKNESS, ...points);
+    }
+
     private drawShip(timestamp: number) {
         this.drawLines(
             this.state.ship.pos,
+            SCALE,
             this.state.ship.rot,
             FONT_COLOR,
             THICKNESS,
-            SCALE,
             new Vector2(0, -0.5),
             new Vector2(0.3, 0.3),
             new Vector2(0.1, 0.1),
@@ -121,10 +157,10 @@ class Game {
         if (this.state.ship.moving.forward && (timestamp * 10) % 2 === 0) {
             this.drawLines(
                 this.state.ship.pos,
+                SCALE,
                 this.state.ship.rot,
                 FONT_COLOR,
                 THICKNESS,
-                SCALE,
                 new Vector2(-0.1, 0.1),
                 new Vector2(0.0, 0.4),
                 new Vector2(0.1, 0.1),
@@ -143,10 +179,10 @@ class Game {
 
     private drawLines(
         origin: Vector2,
+        scale: number,
         rotation: number,
         strokeStyle: string,
         lineWidth: number,
-        scale: number,
         ...points: Vector2[]
     ) {
         const transform = (p: Vector2) =>
@@ -251,20 +287,32 @@ class Game {
 function main() {
     console.log("Hello, World!");
     let previousTimestamp = 0;
-    const state = new State({
-        ship: {
-            pos: GAME_SIZE.clone().scale(0.5),
-            vel: new Vector2(),
-            rot: 0,
-            moving: {
-                forward: false,
-            },
-            turning: {
-                left: false,
-                right: false,
-            },
+    const ship: Ship = {
+        pos: GAME_SIZE.clone().scale(0.5),
+        vel: new Vector2(),
+        rot: 0,
+        moving: {
+            forward: false,
         },
-    });
+        turning: {
+            left: false,
+            right: false,
+        },
+    };
+    const asteroids: Asteroid[] = [];
+    for(let i = 0; i < 10; i++){
+        const sizeRng = Math.random();
+        const size = sizeRng > 0.3 ? AsteroidSize.BIG : sizeRng > 0.6 ? AsteroidSize.MEDIUM : AsteroidSize.SMALL;
+        const a: Asteroid = {
+            pos: new Vector2((Math.random() * GAME_SIZE.x), (Math.random() * GAME_SIZE.y)),
+            rot: 0.0,
+            seed: String(Math.random()),
+            size,
+            vel: new Vector2()
+        };
+        asteroids.push(a);
+    }
+    const state = new State(ship, asteroids);
     const game = new Game(state);
 
     registerKey("KeyW", (down) => {
@@ -286,6 +334,11 @@ function main() {
     };
 
     requestAnimationFrame(frame);
+
+    //@ts-expect-error ok
+    window.DEBUG = function(){
+        console.log(game,state);
+    }
 }
 
 main();

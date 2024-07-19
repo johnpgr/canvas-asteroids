@@ -1,3 +1,5 @@
+import type { PRNG } from "seedrandom";
+
 export function assert(
     condition: boolean,
     message?: string,
@@ -23,4 +25,13 @@ export function registerKey(key: string, callback: (down: boolean) => void) {
             callback(false);
         }
     });
+}
+
+// Returns a random integer in the range [atLeast, atMost]
+export function prngIntInRange(
+    prng: PRNG,
+    atLeast: number,
+    atMost: number,
+): number {
+    return Math.floor(prng.quick() * (atMost - atLeast + 1)) + atLeast;
 }

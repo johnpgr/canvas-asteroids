@@ -9,8 +9,13 @@
     "preview": "vite preview"
   },
   "devDependencies": {
+    "@types/bun": "^1.1.6",
+    "@types/seedrandom": "^3.0.8",
     "prettier": "^3.3.3",
     "typescript": "^5.2.2",
     "vite": "^5.3.4"
+  },
+  "dependencies": {
+    "seedrandom": "^3.0.5"
   }
 }
