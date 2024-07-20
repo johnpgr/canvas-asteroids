@@ -1,9 +1,6 @@
 import { type PRNG, alea } from "seedrandom";
 
-export function assert(
-    condition: boolean,
-    message?: string,
-): asserts condition {
+export function assert(condition: boolean, message?: string): asserts condition {
     if (!condition) throw new Error(message);
 }
 
@@ -32,11 +29,7 @@ export function registerKey(key: string, callback: (down: boolean) => void) {
 }
 
 // Returns a random integer in the range [atLeast, atMost]
-export function prngIntInRange(
-    prng: PRNG,
-    atLeast: number,
-    atMost: number,
-): number {
+export function prngIntInRange(prng: PRNG, atLeast: number, atMost: number): number {
     return Math.floor(prng.quick() * (atMost - atLeast + 1)) + atLeast;
 }
 

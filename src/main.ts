@@ -1,11 +1,5 @@
 import { Vector2 } from "./math";
-import {
-    exhaustive,
-    getRng,
-    prngIntInRange,
-    registerKey,
-    unreachable,
-} from "./utils";
+import { exhaustive, getRng, prngIntInRange, registerKey, unreachable } from "./utils";
 import { PRNG } from "seedrandom";
 
 const ASTEROID_COUNT = 20;
@@ -33,16 +27,14 @@ class Asteroid {
     ) {}
 
     static randomSize(rng: PRNG): Asteroid.Size {
-        return rng() > 0.3
-            ? Asteroid.Size.BIG
-            : rng() > 0.6
-              ? Asteroid.Size.MEDIUM
-              : Asteroid.Size.SMALL;
+        return rng() > 0.3 ? Asteroid.Size.BIG : rng() > 0.6 ? Asteroid.Size.MEDIUM : Asteroid.Size.SMALL;
     }
 
     static randomShape(rng: PRNG): Vector2[] {
         const n = prngIntInRange(rng, 8, 15);
-        return Array.from({ length: n }).map((_, i) => {
+        return Array.from({
+            length: n,
+        }).map((_, i) => {
             let radius = 0.3 + 0.2 * rng();
             if (rng() < 0.2) {
                 radius -= 0.15;
@@ -66,7 +58,10 @@ class Ship {
     vel: Vector2;
     rot: number;
     movingForward: boolean;
-    turning: { left: boolean; right: boolean };
+    turning: {
+        left: boolean;
+        right: boolean;
+    };
     died_at: number;
 
     get dead(): boolean {
@@ -112,13 +107,7 @@ class LineParticle extends BaseParticle {
     rot: number;
     length: number;
 
-    constructor(
-        pos: Vector2,
-        vel: Vector2,
-        ttl: number,
-        rot: number,
-        length: number,
-    ) {
+    constructor(pos: Vector2, vel: Vector2, ttl: number, rot: number, length: number) {
         super(pos, vel, ttl);
         this.rot = rot;
         this.length = length;
@@ -128,7 +117,7 @@ class LineParticle extends BaseParticle {
 class DotParticle extends BaseParticle {
     radius: number;
 
-    constructor(pos: Vector2, vel: Vector2, ttl: Vector2, radius: number) {
+    constructor(pos: Vector2, vel: Vector2, ttl: number, radius: number) {
         super(pos, vel, ttl);
         this.radius = radius;
     }
@@ -170,10 +159,7 @@ class State {
         for (let i = 0; i < asteroidCount; i++) {
             const size = Asteroid.randomSize(this.rng);
             const shape = Asteroid.randomShape(this.rng);
-            const pos = new Vector2(
-                Math.random() * GAME_SIZE.x,
-                Math.random() * GAME_SIZE.y,
-            );
+            const pos = new Vector2(Math.random() * GAME_SIZE.x, Math.random() * GAME_SIZE.y);
             const vel = new Vector2();
             const rot = this.rng() * prngIntInRange(this.rng, 1, 9);
 
@@ -190,7 +176,7 @@ class State {
     }
 
     private updateShip() {
-        if(this.ship.dead) return;
+        if (this.ship.dead) return;
 
         const dirAngle = this.ship.rot + Math.PI * 0.5;
         const direction = new Vector2().setAngle(dirAngle);
@@ -222,37 +208,25 @@ class State {
     }
 
     private checkAsteroidCollision(a: Asteroid) {
-        if (
-            !this.ship.dead &&
-            a.pos.distanceTo(this.ship.pos) < a.size
-        ) {
+        if (!this.ship.dead && a.pos.distanceTo(this.ship.pos) < a.size) {
             this.ship.died_at = this.timestamp;
-            for (let i = 0; i < 5; i++) {
+            for (let i = 0; i < 4; i++) {
                 const angle = TAU * this.rng.quick();
-                const pos = this.ship.pos
-                    .clone()
-                    .add(
-                        new Vector2(this.rng.quick() * 3, this.rng.quick() * 3),
-                    );
-                const vel = new Vector2()
-                    .setAngle(angle)
-                    .scale(2.0 * this.rng.quick());
-                const ttl = 3.0 + this.rng.quick();
+                const pos = this.ship.pos.clone().add(new Vector2(this.rng.quick() * 3, this.rng.quick() * 3));
+                const vel = new Vector2().setAngle(angle).scale(0.3 * this.rng.quick());
+                const ttl = 1.0 + i + this.rng.quick();
                 const rot = TAU * this.rng.quick();
                 const length = SCALE * (0.6 + 0.4 * this.rng.quick());
-                this.particles.add(
-                    new LineParticle(pos, vel, ttl, rot, length),
-                );
+                this.particles.add(new LineParticle(pos, vel, ttl, rot, length));
             }
         }
-
     }
 
     private updateParticle(p: Particle) {
         p.pos.add(p.vel);
         p.pos.mod(GAME_SIZE);
 
-        if(p.ttl > this.deltaTime) {
+        if (p.ttl > this.deltaTime) {
             p.ttl -= this.deltaTime;
         } else {
             this.particles.delete(p);
@@ -266,14 +240,11 @@ class Game {
     state: State;
     fps = 0;
     lastFpsUpdate = 0;
+    paused = false;
 
     constructor(state: State) {
-        this.canvas =
-            document.querySelector("#game") ??
-            unreachable("Game canvas element not found.");
-        this.ctx =
-            this.canvas.getContext("2d") ??
-            unreachable("2d context not supported.");
+        this.canvas = document.querySelector("#game") ?? unreachable("Game canvas element not found.");
+        this.ctx = this.canvas.getContext("2d") ?? unreachable("2d context not supported.");
         this.state = state;
         this.canvas.width = GAME_SIZE.x;
         this.canvas.height = GAME_SIZE.y;
@@ -282,12 +253,8 @@ class Game {
     render(timestamp: number, deltaTime: number) {
         this.drawBackground(BACKGROUND_COLOR);
         this.drawShip(timestamp);
-        this.state.asteroids.forEach((asteroid) =>
-            this.drawAsteroid(asteroid),
-        );
-        this.state.particles.forEach((particle) =>
-            this.drawParticle(particle),
-        );
+        this.state.asteroids.forEach((asteroid) => this.drawAsteroid(asteroid));
+        this.state.particles.forEach((particle) => this.drawParticle(particle));
     }
 
     private drawDebug(deltaTime: number, updateMs = 100) {
@@ -328,6 +295,8 @@ class Game {
     }
 
     private drawShip(timestamp: number) {
+        if (this.state.ship.dead) return;
+
         this.drawLines(
             this.state.ship.pos,
             SCALE,
@@ -340,7 +309,7 @@ class Game {
             new Vector2(-0.1, 0.1),
             new Vector2(-0.3, 0.3),
         );
-        if (this.state.ship.movingForward && (timestamp * 10) % 2 === 0 && !this.state.ship.dead) {
+        if (this.state.ship.movingForward && (timestamp * 10) % 2 === 0) {
             this.drawLines(
                 this.state.ship.pos,
                 SCALE,
@@ -355,12 +324,7 @@ class Game {
     }
 
     private drawBackground(color: string) {
-        this.drawRectFill(
-            new Vector2(0, 0),
-            this.canvas.width,
-            this.canvas.height,
-            color,
-        );
+        this.drawRectFill(new Vector2(0, 0), this.canvas.width, this.canvas.height, color);
     }
 
     private drawLines(
@@ -371,8 +335,7 @@ class Game {
         lineWidth: number,
         ...points: Vector2[]
     ) {
-        const transform = (p: Vector2) =>
-            p.clone().rotate(rotation).scale(scale).add(origin);
+        const transform = (p: Vector2) => p.clone().rotate(rotation).scale(scale).add(origin);
 
         this.ctx.save();
         this.ctx.strokeStyle = strokeStyle;
@@ -380,22 +343,12 @@ class Game {
         for (let i = 0; i < points.length; i++) {
             const from = points[i]!;
             const to = points[(i + 1) % points.length]!;
-            this.drawLine(
-                transform(from),
-                transform(to),
-                lineWidth,
-                strokeStyle,
-            );
+            this.drawLine(transform(from), transform(to), lineWidth, strokeStyle);
         }
         this.ctx.restore();
     }
 
-    private drawLine(
-        from: Vector2,
-        to: Vector2,
-        lineWidth: number,
-        strokeStyle: string,
-    ) {
+    private drawLine(from: Vector2, to: Vector2, lineWidth: number, strokeStyle: string) {
         this.ctx.save();
         this.ctx.strokeStyle = strokeStyle;
         this.ctx.lineWidth = lineWidth;
@@ -406,12 +359,7 @@ class Game {
         this.ctx.restore();
     }
 
-    private drawRectFill(
-        topLeft: Vector2,
-        width: number,
-        height: number,
-        fillStyle: string,
-    ) {
+    private drawRectFill(topLeft: Vector2, width: number, height: number, fillStyle: string) {
         this.ctx.save();
         this.ctx.fillStyle = fillStyle;
         this.ctx.fillRect(topLeft.x, topLeft.y, width, height);
@@ -427,12 +375,7 @@ class Game {
         this.ctx.restore();
     }
 
-    private drawText(
-        text: string,
-        position: Vector2,
-        font: string,
-        fillStyle: string,
-    ) {
+    private drawText(text: string, position: Vector2, font: string, fillStyle: string) {
         this.ctx.save();
         this.ctx.fillStyle = fillStyle;
         this.ctx.font = font;
@@ -459,16 +402,26 @@ function main() {
     });
 
     const frame = (timestamp: number) => {
+        if (game.paused) return;
         const dt = (timestamp - previousTimestamp) / 1000;
         previousTimestamp = timestamp;
         state.update(timestamp, dt);
-        if(state.ship.dead && (timestamp - state.ship.died_at) > 3.0 * 1000) {
-            state.reset();
+        if (state.ship.dead) {
+            state.particles.forEach((p) => (p.ttl = Math.max(0, p.ttl - dt)));
+            if (timestamp - state.ship.died_at > 3.0 * 1000) state.reset();
         }
         game.render(timestamp, dt);
         requestAnimationFrame(frame);
     };
-    requestAnimationFrame(frame);
+
+    window.addEventListener("blur", () => {
+        game.paused = true;
+        requestAnimationFrame(frame);
+    });
+    window.addEventListener("focus", () => {
+        game.paused = false;
+        requestAnimationFrame(frame);
+    });
 
     //@ts-expect-error ok
     window.DEBUG = function () {
