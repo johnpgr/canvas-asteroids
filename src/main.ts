@@ -1,8 +1,8 @@
 import { Vector2 } from "./math";
-import { prngIntInRange, registerKey, unreachable } from "./utils";
-import { alea, PRNG } from "seedrandom";
+import { getRng, prngIntInRange, registerKey, unreachable } from "./utils";
+import { PRNG } from "seedrandom";
 
-const $ = document.querySelector.bind(document);
+const ASTEROID_COUNT = 20;
 const PI = Math.PI;
 const TAU = PI * 2;
 const FACTOR = 256;
@@ -10,41 +10,31 @@ const GAME_SIZE = new Vector2(4 * FACTOR, 3 * FACTOR);
 const THICKNESS = 2.0;
 const SCALE = 32;
 const TURN_SPEED = 0.8;
-const MOVE_SPEED = 10;
+const MOVE_SPEED = 5;
 const ASTEROID_SPEED = 1.0;
 const DRAG = 0.015;
 const FONT_STYLE = "16px monospace";
 const FONT_COLOR = "#fff";
 const BACKGROUND_COLOR = "#000";
-const SEED = 0x123456789;
 
-type Direction = "forward";
-type TurnDirection = "left" | "right";
-type Moving = { [key in Direction]: boolean };
-type Turning = { [key in TurnDirection]: boolean };
+class Asteroid {
+    constructor(
+        public size: Asteroid.Size,
+        public pos: Vector2,
+        public vel: Vector2,
+        public rot: number,
+        public shape: Vector2[],
+    ) { }
 
-interface Asteroid {
-    size: Asteroid.Size;
-    pos: Vector2;
-    vel: Vector2;
-    rot: number;
-    shape: Vector2[];
-}
-
-namespace Asteroid {
-    export enum Size {
-        SMALL = SCALE * 0.8,
-        MEDIUM = SCALE * 1.5,
-        BIG = SCALE * 2.5,
-    }
-    export function randomSize(rng: PRNG): Size {
+    static randomSize(rng: PRNG): Asteroid.Size {
         return rng() > 0.3
-                ? Size.BIG
-                : rng() > 0.6
-                    ? Size.MEDIUM
-                    : Size.SMALL;
+            ? Asteroid.Size.BIG
+            : rng() > 0.6
+                ? Asteroid.Size.MEDIUM
+                : Asteroid.Size.SMALL;
     }
-    export function randomShape(rng: PRNG): Vector2[] {
+
+    static randomShape(rng: PRNG): Vector2[] {
         const n = prngIntInRange(rng, 8, 15);
         return Array.from({ length: n }).map((_, i) => {
             let radius = 0.3 + 0.2 * rng();
@@ -53,48 +43,87 @@ namespace Asteroid {
             }
             const angle = i * (TAU / n) + PI * 0.125 * rng();
             return new Vector2().setAngle(angle).scale(radius);
-        })
+        });
     }
 }
 
-interface Ship {
+namespace Asteroid {
+    export enum Size {
+        SMALL = SCALE * 0.8,
+        MEDIUM = SCALE * 1.5,
+        BIG = SCALE * 2.5,
+    }
+}
+
+class Ship {
     pos: Vector2;
     vel: Vector2;
     rot: number;
-    moving: Moving;
-    turning: Turning;
-}
+    movingForward: boolean;
+    turning: { left: boolean, right: boolean };
+    dead: boolean;
 
-namespace Ship {
-    export function init(): Ship{
-        return {
-            pos: GAME_SIZE.clone().scale(0.5),
-            vel: new Vector2(),
-            rot: 0,
-            moving: {
-                forward: false,
-            },
-            turning: {
-                left: false,
-                right: false,
-            },
-        }
+    constructor() {
+        this.pos = GAME_SIZE.clone().scale(0.5);
+        this.vel = new Vector2();
+        this.rot = 0;
+        this.movingForward = false;
+        this.turning = {
+            left: false,
+            right: false,
+        };
+        this.dead = false;
+    }
+
+    reset() {
+        this.dead = false;
+        this.pos = GAME_SIZE.clone().scale(0.5);
+        this.vel = new Vector2();
+        this.rot = 0;
+        this.movingForward = false;
+        this.turning.left = false;
+        this.turning.right = false;
+        this.dead = false;
     }
 }
 
 class State {
+    seed: string;
     rng: PRNG;
     timestamp: number;
     deltaTime: number;
     ship: Ship;
     asteroids: Asteroid[];
 
-    constructor(rng: PRNG, ship: Ship, asteroids: Asteroid[]) {
-        this.rng = rng;
-        this.ship = ship;
-        this.asteroids = asteroids;
+    constructor(seed: string) {
+        this.seed = seed;
+        this.rng = getRng(seed);
+        this.ship = new Ship();
+        this.asteroids = this.initAsteroids(ASTEROID_COUNT);
         this.timestamp = 0;
         this.deltaTime = 0;
+    }
+
+    reset() {
+        this.seed = String(Math.random());
+        this.rng = getRng(this.seed);
+        this.ship.reset();
+        this.asteroids = this.initAsteroids(ASTEROID_COUNT);
+    }
+
+    initAsteroids(asteroidCount: number): Asteroid[] {
+        return Array.from({ length: asteroidCount }).map(() => {
+            const size = Asteroid.randomSize(this.rng);
+            const shape = Asteroid.randomShape(this.rng);
+            const pos = new Vector2(
+                Math.random() * GAME_SIZE.x,
+                Math.random() * GAME_SIZE.y,
+            );
+            const vel = new Vector2();
+            const rot = this.rng() * prngIntInRange(this.rng, 1, 9);
+
+            return new Asteroid(size, pos, vel, rot, shape);
+        });
     }
 
     update(timestamp: number, deltaTime: number) {
@@ -113,7 +142,7 @@ class State {
         if (this.ship.turning.right) {
             this.ship.rot += this.deltaTime * Math.PI * 2 * TURN_SPEED;
         }
-        if (this.ship.moving.forward) {
+        if (this.ship.movingForward) {
             this.ship.vel.add(direction.scale(MOVE_SPEED * this.deltaTime));
         }
 
@@ -129,6 +158,14 @@ class State {
         asteroid.vel.scale(1 - DRAG);
         asteroid.pos.add(asteroid.vel);
         asteroid.pos.mod(GAME_SIZE);
+
+        this.checkAsteroidCollision(asteroid);
+    }
+
+    private checkAsteroidCollision(asteroid: Asteroid) {
+        if (asteroid.pos.distanceTo(this.ship.pos) < asteroid.size) {
+            this.ship.dead = true;
+        }
     }
 }
 
@@ -140,12 +177,16 @@ class Game {
     lastFpsUpdate = 0;
 
     constructor(state: State) {
-        this.canvas = $("#game") ?? unreachable("Game canvas element not found.");
-        this.ctx = this.canvas.getContext("2d") ?? unreachable("2d context not supported.");
+        this.canvas =
+            document.querySelector("#game") ?? unreachable("Game canvas element not found.");
+        this.ctx =
+            this.canvas.getContext("2d") ??
+            unreachable("2d context not supported.");
         this.state = state;
         this.canvas.width = GAME_SIZE.x;
         this.canvas.height = GAME_SIZE.y;
     }
+
 
     render(timestamp: number, deltaTime: number) {
         this.drawBackground(BACKGROUND_COLOR);
@@ -169,7 +210,7 @@ class Game {
         const textPos = `Pos: x ${this.state.ship.pos.x.toFixed(2)} y ${this.state.ship.pos.y.toFixed(2)}`;
         const textVel = `Vel: x ${this.state.ship.vel.x.toFixed(2)} y ${this.state.ship.vel.y.toFixed(2)}`;
         const textRot = `Rot: ${this.state.ship.rot.toFixed(2)}`;
-        const textMoving = `Moving: forward ${this.state.ship.moving.forward}`;
+        const textMoving = `Moving: forward ${this.state.ship.movingForward}`;
         const textTurning = `Turning: left ${this.state.ship.turning.left} right ${this.state.ship.turning.right}`;
         this.drawText(textFps, new Vector2(10, 20), FONT_STYLE, FONT_COLOR);
         this.drawText(textPos, new Vector2(10, 40), FONT_STYLE, FONT_COLOR);
@@ -208,7 +249,7 @@ class Game {
             new Vector2(-0.1, 0.1),
             new Vector2(-0.3, 0.3),
         );
-        if (this.state.ship.moving.forward && (timestamp * 10) % 2 === 0) {
+        if (this.state.ship.movingForward && (timestamp * 10) % 2 === 0) {
             this.drawLines(
                 this.state.ship.pos,
                 SCALE,
@@ -300,38 +341,15 @@ class Game {
     }
 }
 
-function initAsteroids(rng: PRNG, asteroidCount: number): Asteroid[] {
-    return Array.from({ length: asteroidCount }).map(() => {
-        const size = Asteroid.randomSize(rng);
-        const shape = Asteroid.randomShape(rng);
-        const pos = new Vector2(
-            Math.random() * GAME_SIZE.x,
-            Math.random() * GAME_SIZE.y,
-        );
-        const vel = new Vector2();
-        const rot = rng() * prngIntInRange(rng, 1, 9);
-
-        return {
-            size,
-            pos,
-            vel,
-            rot,
-            shape,
-        } satisfies Asteroid;
-    });
-}
-
 function main() {
     console.log("Hello, World!");
     let previousTimestamp = 0;
-    const ship = Ship.init();
-    const rng = alea(SEED.toString());
-    const asteroids = initAsteroids(rng, 20);
-    const state = new State(rng, ship, asteroids);
+    const seed = String(Math.random());
+    const state = new State(seed);
     const game = new Game(state);
 
     registerKey("KeyW", (down) => {
-        game.state.ship.moving.forward = down;
+        game.state.ship.movingForward = down;
     });
     registerKey("KeyA", (down) => {
         game.state.ship.turning.left = down;
@@ -344,14 +362,17 @@ function main() {
         const dt = (timestamp - previousTimestamp) / 1000;
         previousTimestamp = timestamp;
         state.update(timestamp, dt);
+        if (state.ship.dead) {
+            state.reset();
+            console.log("You died");
+        }
         game.render(timestamp, dt);
         requestAnimationFrame(frame);
     };
-
     requestAnimationFrame(frame);
 
     //@ts-expect-error ok
-    window.DEBUG = function () {
+    window.DEBUG = function() {
         console.log(game);
         console.log(state);
     };

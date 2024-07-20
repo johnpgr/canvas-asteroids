@@ -1,4 +1,4 @@
-import type { PRNG } from "seedrandom";
+import { type PRNG, alea } from "seedrandom";
 
 export function assert(
     condition: boolean,
@@ -34,4 +34,8 @@ export function prngIntInRange(
     atMost: number,
 ): number {
     return Math.floor(prng.quick() * (atMost - atLeast + 1)) + atLeast;
+}
+
+export function getRng(seed: string): PRNG {
+    return alea(seed);
 }
