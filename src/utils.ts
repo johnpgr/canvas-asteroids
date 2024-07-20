@@ -11,6 +11,10 @@ export function unreachable(message: string): never {
     throw new Error("UNREACHABLE: " + message);
 }
 
+export function exhaustive(e: never): never {
+    unreachable("FAILED Exhaustive check for value: " + JSON.stringify(e));
+}
+
 export function registerKey(key: string, callback: (down: boolean) => void) {
     document.addEventListener("keydown", (event) => {
         if (event.repeat) return;
