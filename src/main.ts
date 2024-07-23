@@ -67,6 +67,7 @@ class Asteroid {
         public pos: Vector2,
         public vel: Vector2,
         public shape: Vector2[] = Asteroid.randomShape(getRng(seed)),
+        public dead: boolean = false,
     ) {}
 
     private static randomShape(rng: PRNG): Vector2[] {
@@ -116,23 +117,23 @@ class Asteroid {
     }
 
     split(rng: PRNG): Asteroid[] {
-        const asteroids: Asteroid[] = [];
+        this.dead = true;
+        if (this.size === AsteroidSize.SMALL) return [];
         const size =
             this.size === AsteroidSize.BIG
                 ? AsteroidSize.MEDIUM
-                : this.size === AsteroidSize.MEDIUM
-                  ? AsteroidSize.SMALL
-                  : unreachable("Asteroid of size SMALL can't be split");
+                : AsteroidSize.SMALL;
         const pos = this.pos;
 
+        const newAsteroids: Asteroid[] = [];
         for (let i = 0; i < 2; i++) {
             const dir = this.vel.norm();
             const rngScale = rng.quick() * this.velocityScale;
             const vel = dir.scale(rngScale);
-            asteroids.push(new Asteroid(randomSeed(), size, pos, vel));
+            newAsteroids.push(new Asteroid(randomSeed(), size, pos, vel));
         }
 
-        return asteroids;
+        return newAsteroids;
     }
 }
 
@@ -211,6 +212,7 @@ class State {
         public particles: Set<Particle> = new Set(),
         public projectiles: Set<Projectile> = new Set(),
         private lastShotAt: number = 0,
+        private newAsteroidQueue: Set<Asteroid> = new Set(),
     ) {
         this.initAsteroids(ASTEROID_COUNT);
     }
@@ -242,9 +244,10 @@ class State {
             );
             if (timestamp - this.ship.diedAt > 3.0 * 1000) this.reset();
         }
-        this.particles.forEach(this.updateParticle.bind(this));
-        this.projectiles.forEach(this.updateProjectile.bind(this));
-        this.asteroids.forEach(this.updateAsteroid.bind(this));
+        this.particles.forEach((p) => this.updateParticle(p));
+        this.projectiles.forEach((p) => this.updateProjectile(p));
+        this.asteroids.forEach((a) => this.updateAsteroid(a));
+        this.newAsteroidQueue.forEach((a) => this.asteroids.add(a));
     }
 
     private updateShip() {
@@ -282,6 +285,10 @@ class State {
     }
 
     private updateAsteroid(a: Asteroid) {
+        if(a.dead) {
+            this.asteroids.delete(a);
+            return;
+        }
         a.pos.add(a.vel);
         a.pos.mod(GAME_SIZE);
         this.checkAsteroidCollision(a);
@@ -332,39 +339,16 @@ class State {
     }
 
     private projectilePath(p: Projectile) {
-        const asteroidQueue = new Set<Asteroid>();
-
         this.asteroids.forEach((a) => {
             if (a.isColliding(p.pos)) {
-                switch (a.size) {
-                    case AsteroidSize.BIG: {
-                        const asteroids = a.split(this.rng);
-                        this.asteroids.delete(a);
-                        this.projectiles.delete(p);
-                        asteroidQueue.add(asteroids[0]!);
-                        asteroidQueue.add(asteroids[1]!);
-                        break;
-                    }
-                    case AsteroidSize.MEDIUM: {
-                        const asteroids = a.split(this.rng);
-                        this.asteroids.delete(a);
-                        this.projectiles.delete(p);
-                        asteroidQueue.add(asteroids[0]!);
-                        asteroidQueue.add(asteroids[1]!);
-                        break;
-                    }
-                    case AsteroidSize.SMALL: {
-                        this.asteroids.delete(a);
-                        this.projectiles.delete(p);
-                        break;
-                    }
-                    default:
-                        exhaustive(a.size);
-                }
+                const asteroids = a.split(this.rng);
+                this.asteroids.delete(a);
+                this.projectiles.delete(p);
+                if(asteroids.length !== 2) return;
+                this.newAsteroidQueue.add(asteroids[0]!);
+                this.newAsteroidQueue.add(asteroids[1]!);
             }
         });
-
-        asteroidQueue.forEach((a) => this.asteroids.add(a));
     }
 }
 
@@ -587,15 +571,15 @@ function main() {
 
     canvas.addEventListener("click", (e) => {
         const clickPos = new Vector2(e.offsetX, e.offsetY);
-        const asteroidsInPos: Asteroid[] = []
+        const asteroidsInPos: Asteroid[] = [];
         state.asteroids.forEach((a) => {
             if (a.isColliding(clickPos)) asteroidsInPos.push(a);
-        })
+        });
         asteroidsInPos.forEach((a) => {
-            console.log("Pos:", a.pos)
-            console.log("Vel:", a.vel)
-            console.log("\n")
-        })
+            console.log("Pos:", a.pos);
+            console.log("Vel:", a.vel);
+            console.log("\n");
+        });
     });
 
     const frame = (timestamp: number) => {
