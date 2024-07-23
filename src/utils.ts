@@ -17,7 +17,6 @@ export function exhaustive(e: never): never {
 
 export function registerKey(key: string, callback: (down: boolean) => void) {
     document.addEventListener("keydown", (event) => {
-        event.preventDefault();
         if (event.repeat) return;
         if (event.code === key) {
             callback(true);
@@ -43,4 +42,7 @@ export function prngIntInRange(
 
 export function getRng(seed: string): PRNG {
     return alea(seed);
+}
+export function randomSeed(): string {
+    return String(Math.random() * Number.MAX_SAFE_INTEGER);
 }

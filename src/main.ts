@@ -3,6 +3,7 @@ import {
     exhaustive,
     getRng,
     prngIntInRange,
+    randomSeed,
     registerKey,
     unreachable,
 } from "./utils";
@@ -20,29 +21,55 @@ const COLOR = "#fff";
 const BACKGROUND_COLOR = "#000";
 const TURN_SPEED = 0.8;
 const MOVE_SPEED = 5;
-const ASTEROID_SPEED = 1.0;
 const PROJECTILE_SPEED = 0.2;
 const MAX_PROJECTILES = 20;
-const SHOOTING_RATE = 500; // 500ms
-const ASTEROID_COUNT = 1;
-const ASTEROID_HIT_COOLDOWN = 500; // 500ms
+const SHOOTING_RATE = 400; // 500ms
+const ASTEROID_COUNT = 10;
 
-export enum AsteroidSize {
-    SMALL = SCALE * 0.8,
-    MEDIUM = SCALE * 1.5,
+enum AsteroidSize {
     BIG = SCALE * 2.5,
+    MEDIUM = SCALE * 1.5,
+    SMALL = SCALE * 0.8,
+}
+
+namespace AsteroidSize {
+    export function velocityScale(s: AsteroidSize): number {
+        switch (s) {
+            case AsteroidSize.BIG:
+                return 0.5;
+            case AsteroidSize.MEDIUM:
+                return 0.8;
+            case AsteroidSize.SMALL:
+                return 1.0;
+            default:
+                return exhaustive(s);
+        }
+    }
+
+    export function collisionScale(s: AsteroidSize): number {
+        switch (s) {
+            case AsteroidSize.BIG:
+                return 0.55;
+            case AsteroidSize.MEDIUM:
+                return 0.65;
+            case AsteroidSize.SMALL:
+                return 1.0;
+            default:
+                return exhaustive(s);
+        }
+    }
 }
 
 class Asteroid {
-    static randomSize(rng: PRNG): AsteroidSize {
-        return rng() > 0.3
-            ? AsteroidSize.BIG
-            : rng() > 0.6
-                ? AsteroidSize.MEDIUM
-                : AsteroidSize.SMALL;
-    }
+    constructor(
+        public seed: string,
+        public size: AsteroidSize,
+        public pos: Vector2,
+        public vel: Vector2,
+        public shape: Vector2[] = Asteroid.randomShape(getRng(seed)),
+    ) {}
 
-    static randomShape(rng: PRNG): Vector2[] {
+    private static randomShape(rng: PRNG): Vector2[] {
         const n = prngIntInRange(rng, 8, 15);
         return Array.from({
             length: n,
@@ -56,53 +83,56 @@ class Asteroid {
         });
     }
 
-    constructor(
-        public size: AsteroidSize,
-        public pos: Vector2,
-        public vel: Vector2,
-        public rot: number,
-        public shape: Vector2[],
-        public hitBy: Projectile | null = null,
-    ) { }
+    static RANDOM(seed: string): Asteroid {
+        const rng = getRng(seed);
+        const size =
+            rng() > 0.3
+                ? AsteroidSize.BIG
+                : rng() > 0.6
+                  ? AsteroidSize.MEDIUM
+                  : AsteroidSize.SMALL;
+        const shape = Asteroid.randomShape(rng);
+        const angle = TAU * rng.quick();
+        const pos = new Vector2(
+            rng.quick() * GAME_SIZE.x,
+            rng.quick() * GAME_SIZE.y,
+        );
+        const vel = new Vector2()
+            .setAngle(angle)
+            .scale(AsteroidSize.velocityScale(size));
+        return new Asteroid(seed, size, pos, vel, shape);
+    }
 
     get collisionScale(): number {
-        let scale: number;
-
-        switch (this.size) {
-            case AsteroidSize.BIG:
-                scale = 0.55;
-                break;
-            case AsteroidSize.MEDIUM:
-                scale = 0.65;
-                break;
-            case AsteroidSize.SMALL:
-                scale = 1.0;
-                break;
-        }
-
-        return scale;
+        return AsteroidSize.collisionScale(this.size);
     }
 
     get velocityScale(): number {
-        let scale: number;
-
-        switch (this.size) {
-            case AsteroidSize.BIG:
-                scale = 0.75;
-                break;
-            case AsteroidSize.MEDIUM:
-                scale = 1.0;
-                break;
-            case AsteroidSize.SMALL:
-                scale = 1.6;
-                break;
-        }
-
-        return scale;
+        return AsteroidSize.velocityScale(this.size);
     }
 
     isColliding(pos: Vector2): boolean {
-        return this.pos.distanceTo(pos) < this.size * this.collisionScale
+        return this.pos.distanceTo(pos) < this.size * this.collisionScale;
+    }
+
+    split(rng: PRNG): Asteroid[] {
+        const asteroids: Asteroid[] = [];
+        const size =
+            this.size === AsteroidSize.BIG
+                ? AsteroidSize.MEDIUM
+                : this.size === AsteroidSize.MEDIUM
+                  ? AsteroidSize.SMALL
+                  : unreachable("Asteroid of size SMALL can't be split");
+        const pos = this.pos;
+
+        for (let i = 0; i < 2; i++) {
+            const dir = this.vel.norm();
+            const rngScale = rng.quick() * this.velocityScale;
+            const vel = dir.scale(rngScale);
+            asteroids.push(new Asteroid(randomSeed(), size, pos, vel));
+        }
+
+        return asteroids;
     }
 }
 
@@ -118,7 +148,7 @@ class Ship {
             right: false,
         },
         public diedAt: number = -1,
-    ) { }
+    ) {}
 
     get dead(): boolean {
         return this.diedAt !== -1;
@@ -135,35 +165,29 @@ class Ship {
     }
 }
 
-class BaseParticle {
+interface IParticle {
+    pos: Vector2;
+    vel: Vector2;
+    ttl: number;
+}
+
+class LineParticle implements IParticle {
     constructor(
         public pos: Vector2,
         public vel: Vector2,
         public ttl: number,
-    ) { }
-}
-
-class LineParticle extends BaseParticle {
-    constructor(
-        pos: Vector2,
-        vel: Vector2,
-        ttl: number,
         public rot: number,
         public length: number,
-    ) {
-        super(pos, vel, ttl);
-    }
+    ) {}
 }
 
-class DotParticle extends BaseParticle {
+class DotParticle implements IParticle {
     constructor(
-        pos: Vector2,
-        vel: Vector2,
-        ttl: number,
+        public pos: Vector2,
+        public vel: Vector2,
+        public ttl: number,
         public radius: number,
-    ) {
-        super(pos, vel, ttl);
-    }
+    ) {}
 }
 
 type Particle = LineParticle | DotParticle;
@@ -173,7 +197,7 @@ class Projectile {
         public pos: Vector2,
         public vel: Vector2,
         public ttl: number,
-    ) { }
+    ) {}
 }
 
 class State {
@@ -202,18 +226,9 @@ class State {
 
     initAsteroids(asteroidCount: number) {
         this.asteroids.clear();
-
         for (let i = 0; i < asteroidCount; i++) {
-            const size = Asteroid.randomSize(this.rng);
-            const shape = Asteroid.randomShape(this.rng);
-            const pos = new Vector2(
-                Math.random() * GAME_SIZE.x,
-                Math.random() * GAME_SIZE.y,
-            );
-            const vel = new Vector2();
-            const rot = this.rng() * prngIntInRange(this.rng, 1, 9);
-
-            this.asteroids.add(new Asteroid(size, pos, vel, rot, shape));
+            const seed = String(Math.random() * Number.MAX_SAFE_INTEGER);
+            this.asteroids.add(Asteroid.RANDOM(seed));
         }
     }
 
@@ -222,7 +237,9 @@ class State {
         this.deltaTime = deltaTime;
         this.updateShip();
         if (this.ship.dead) {
-            this.particles.forEach((p) => (p.ttl = Math.max(0, p.ttl - deltaTime)));
+            this.particles.forEach(
+                (p) => (p.ttl = Math.max(0, p.ttl - deltaTime)),
+            );
             if (timestamp - this.ship.diedAt > 3.0 * 1000) this.reset();
         }
         this.particles.forEach(this.updateParticle.bind(this));
@@ -255,7 +272,7 @@ class State {
     }
 
     private shoot() {
-        if (this.projectiles.size >= MAX_PROJECTILES) return
+        if (this.projectiles.size >= MAX_PROJECTILES) return;
         this.lastShotAt = this.timestamp;
         const dirAngle = this.ship.rot - Math.PI * 0.5;
         const direction = new Vector2().setAngle(dirAngle);
@@ -265,21 +282,13 @@ class State {
     }
 
     private updateAsteroid(a: Asteroid) {
-        const dirAngle = a.rot + Math.PI * 0.5;
-        const direction = new Vector2().setAngle(dirAngle);
-        a.vel.add(direction.scale(ASTEROID_SPEED * this.deltaTime));
-        a.vel.scale(1 - DRAG);
         a.pos.add(a.vel);
         a.pos.mod(GAME_SIZE);
-        if(a.hitBy && a.hitBy.ttl < this.deltaTime) a.hitBy = null;
         this.checkAsteroidCollision(a);
     }
 
     private checkAsteroidCollision(a: Asteroid) {
-        if (
-            !this.ship.dead &&
-            a.isColliding(this.ship.pos)
-        ) {
+        if (!this.ship.dead && a.isColliding(this.ship.pos)) {
             this.ship.diedAt = this.timestamp;
             for (let i = 0; i < 4; i++) {
                 const angle = TAU * this.rng.quick();
@@ -312,19 +321,7 @@ class State {
     }
 
     private updateProjectile(p: Projectile) {
-        this.asteroids.forEach((a) => {
-            if (a.isColliding(p.pos)) {
-                if (!a.hitBy || a.hitBy !== p) {
-                    switch (a.size) {
-                        case AsteroidSize.BIG: a.size = AsteroidSize.MEDIUM; break
-                        case AsteroidSize.MEDIUM: a.size = AsteroidSize.SMALL; break
-                        case AsteroidSize.SMALL: this.asteroids.delete(a); break
-                        default: exhaustive(a.size);
-                    }
-                    a.hitBy = p;
-                }
-            }
-        });
+        this.projectilePath(p);
         p.pos.add(p.vel);
         p.pos.mod(GAME_SIZE);
         if (p.ttl > this.deltaTime) {
@@ -332,6 +329,42 @@ class State {
         } else {
             this.projectiles.delete(p);
         }
+    }
+
+    private projectilePath(p: Projectile) {
+        const asteroidQueue = new Set<Asteroid>();
+
+        this.asteroids.forEach((a) => {
+            if (a.isColliding(p.pos)) {
+                switch (a.size) {
+                    case AsteroidSize.BIG: {
+                        const asteroids = a.split(this.rng);
+                        this.asteroids.delete(a);
+                        this.projectiles.delete(p);
+                        asteroidQueue.add(asteroids[0]!);
+                        asteroidQueue.add(asteroids[1]!);
+                        break;
+                    }
+                    case AsteroidSize.MEDIUM: {
+                        const asteroids = a.split(this.rng);
+                        this.asteroids.delete(a);
+                        this.projectiles.delete(p);
+                        asteroidQueue.add(asteroids[0]!);
+                        asteroidQueue.add(asteroids[1]!);
+                        break;
+                    }
+                    case AsteroidSize.SMALL: {
+                        this.asteroids.delete(a);
+                        this.projectiles.delete(p);
+                        break;
+                    }
+                    default:
+                        exhaustive(a.size);
+                }
+            }
+        });
+
+        asteroidQueue.forEach((a) => this.asteroids.add(a));
     }
 }
 
@@ -343,7 +376,7 @@ class Game {
         public fps: number = 0,
         public lastFpsUpdate: number = 0,
         public paused: boolean = false,
-    ) { }
+    ) {}
 
     render(timestamp: number, deltaTime: number) {
         this.drawBackground(BACKGROUND_COLOR);
@@ -364,14 +397,14 @@ class Game {
         }
 
         const textFps = `FPS: ${this.fps.toFixed(0)}`;
-        const textSeed = `Seed: ${this.state.seed}`
+        const textSeed = `Seed: ${this.state.seed}`;
         const textPos = `Pos: x ${this.state.ship.pos.x.toFixed(2)} y ${this.state.ship.pos.y.toFixed(2)}`;
         const textVel = `Vel: x ${this.state.ship.vel.x.toFixed(2)} y ${this.state.ship.vel.y.toFixed(2)}`;
         const textRot = `Rot: ${this.state.ship.rot.toFixed(2)}`;
         const textMoving = `Moving forward: ${this.state.ship.movingForward}`;
         const textTurning = `Turning: left ${this.state.ship.turning.left} right ${this.state.ship.turning.right}`;
-        const textShooting = `Shooting: ${this.state.ship.shooting}`
-        const textDied = `Died: ${this.state.ship.diedAt}`
+        const textShooting = `Shooting: ${this.state.ship.shooting}`;
+        const textDied = `Died: ${this.state.ship.diedAt}`;
         this.drawText(textFps, new Vector2(5, 15), FONT_STYLE, COLOR);
         this.drawText(textSeed, new Vector2(5, 30), FONT_STYLE, COLOR);
         this.drawText(textPos, new Vector2(5, 45), FONT_STYLE, COLOR);
@@ -552,26 +585,31 @@ function main() {
         game.state.ship.shooting = down;
     });
 
+    canvas.addEventListener("click", (e) => {
+        const clickPos = new Vector2(e.offsetX, e.offsetY);
+        const asteroidsInPos: Asteroid[] = []
+        state.asteroids.forEach((a) => {
+            if (a.isColliding(clickPos)) asteroidsInPos.push(a);
+        })
+        asteroidsInPos.forEach((a) => {
+            console.log("Pos:", a.pos)
+            console.log("Vel:", a.vel)
+            console.log("\n")
+        })
+    });
+
     const frame = (timestamp: number) => {
         if (game.paused) return;
         const dt = (timestamp - previousTimestamp) / 1000;
         previousTimestamp = timestamp;
         state.update(timestamp, dt);
         game.render(timestamp, dt);
-        requestAnimationFrame(frame);
+        window.requestAnimationFrame(frame);
     };
-    requestAnimationFrame(frame);
-
-    // window.addEventListener("blur", () => {
-    //     game.paused = true;
-    // });
-    // window.addEventListener("focus", () => {
-    //     game.paused = false;
-    //     requestAnimationFrame(frame);
-    // });
+    window.requestAnimationFrame(frame);
 
     //@ts-expect-error ok
-    window.DEBUG = function() {
+    window.DEBUG = function () {
         console.log(game);
         console.log(state);
     };
