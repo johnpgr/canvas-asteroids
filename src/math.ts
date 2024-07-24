@@ -5,6 +5,9 @@ export class Vector2 {
         this.x = x;
         this.y = y ?? x;
     }
+    angle(): number {
+        return Math.atan2(this.y, this.x);
+    }
     setScalar(scalar: number): this {
         this.x = scalar;
         this.y = scalar;

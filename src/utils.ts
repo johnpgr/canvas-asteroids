@@ -15,17 +15,28 @@ export function exhaustive(e: never): never {
     unreachable("FAILED Exhaustive check for value: " + JSON.stringify(e));
 }
 
-export function registerKey(key: string, callback: (down: boolean) => void) {
+export function registerKey(
+    key: string | string[],
+    callback: (down: boolean) => void,
+) {
     document.addEventListener("keydown", (event) => {
         if (event.repeat) return;
-        if (event.code === key) {
+        if (Array.isArray(key)) {
+            if (key.includes(event.code)) {
+                callback(true);
+            }
+        } else if (event.code === key) {
             callback(true);
         }
     });
 
     document.addEventListener("keyup", (event) => {
         if (event.repeat) return;
-        if (event.code === key) {
+        if (Array.isArray(key)) {
+            if (key.includes(event.code)) {
+                callback(false);
+            }
+        } else if (event.code === key) {
             callback(false);
         }
     });
