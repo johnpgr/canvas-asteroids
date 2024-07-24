@@ -24,7 +24,7 @@ const MOVE_SPEED = 5.0;
 const PROJECTILE_SPEED = 0.2;
 const MAX_PROJECTILES = 20;
 const SHOOTING_RATE = 200; //ms
-const ASTEROID_COUNT = 20;
+const INITIAL_ASTEROID_COUNT = 5;
 
 const AsteroidKind = { BIG: "BIG", MEDIUM: "MEDIUM", SMALL: "SMALL" };
 type AsteroidKind = keyof typeof AsteroidKind;
@@ -41,7 +41,7 @@ namespace AsteroidSize {
         return {
             kind: "BIG",
             value: SCALE * 2.5,
-            velocityScale: 0.5,
+            velocityScale: 1.5,
             collisionScale: 0.55,
             score: 20,
         };
@@ -50,7 +50,7 @@ namespace AsteroidSize {
         return {
             kind: "MEDIUM",
             value: SCALE * 1.5,
-            velocityScale: 0.8,
+            velocityScale: 2.0,
             collisionScale: 0.65,
             score: 50,
         };
@@ -59,7 +59,7 @@ namespace AsteroidSize {
         return {
             kind: "SMALL",
             value: SCALE * 0.8,
-            velocityScale: 1.0,
+            velocityScale: 2.5,
             collisionScale: 1.0,
             score: 100,
         };
@@ -90,6 +90,22 @@ class Asteroid {
         });
     }
 
+    private static randomEdgePosition(rng: PRNG): Vector2 {
+        const edge = Math.floor(rng() * 4); // 0: top, 1: right, 2: bottom, 3: left
+        switch (edge) {
+            case 0: // top
+                return new Vector2(rng() * GAME_SIZE.x, 0);
+            case 1: // right
+                return new Vector2(GAME_SIZE.x, rng() * GAME_SIZE.y);
+            case 2: // bottom
+                return new Vector2(rng() * GAME_SIZE.x, GAME_SIZE.y);
+            case 3: // left
+                return new Vector2(0, rng() * GAME_SIZE.y);
+            default:
+                throw new Error("Unexpected edge value");
+        }
+    }
+
     static RANDOM(seed: string): Asteroid {
         const rng = getRng(seed);
         const size =
@@ -100,10 +116,7 @@ class Asteroid {
                   : AsteroidSize.SMALL();
         const shape = Asteroid.randomShape(rng);
         const angle = TAU * rng.quick();
-        const pos = new Vector2(
-            rng.quick() * GAME_SIZE.x,
-            rng.quick() * GAME_SIZE.y,
-        );
+        const pos = Asteroid.randomEdgePosition(rng);
         const vel = new Vector2();
         return new Asteroid(seed, size, pos, vel, angle, shape);
     }
@@ -115,7 +128,7 @@ class Asteroid {
         );
     }
 
-    split(impact: Vector2): Asteroid[] | null {
+    split(): Asteroid[] | null {
         if (this.size.kind === AsteroidKind.SMALL) return null;
         const newAsteroids: Asteroid[] = [];
 
@@ -127,16 +140,8 @@ class Asteroid {
         for (let i = 0; i < 2; i++) {
             const seed = randomSeed();
             const rng = getRng(seed);
-            const impactAngle = impact.angle();
             const rot = TAU * rng.quick();
-            const speedMultiplier = 1.5 * rng.quick() + 0.5;
-            const angleOffset = (PI / 4) * (rng.quick() - 0.5);
             const newVel = new Vector2()
-                .setAngle(
-                    impactAngle + angleOffset + (i === 0 ? PI / 2 : -PI / 2),
-                )
-                .scale(this.vel.length() * speedMultiplier);
-
             newAsteroids.push(
                 new Asteroid(seed, size, this.pos.clone(), newVel, rot),
             );
@@ -223,14 +228,14 @@ class State {
         private lastShotAt: number = 0,
         private newAsteroidQueue: Set<Asteroid> = new Set(),
     ) {
-        this.initAsteroids(ASTEROID_COUNT);
+        this.initAsteroids(INITIAL_ASTEROID_COUNT);
     }
 
     reset() {
         this.seed = String(Math.random());
         this.rng = getRng(this.seed);
         this.ship.reset();
-        this.initAsteroids(ASTEROID_COUNT);
+        this.initAsteroids(INITIAL_ASTEROID_COUNT);
         this.particles.clear();
         this.projectiles.clear();
     }
@@ -239,7 +244,8 @@ class State {
         this.asteroids.clear();
         for (let i = 0; i < asteroidCount; i++) {
             const seed = randomSeed();
-            this.asteroids.add(Asteroid.RANDOM(seed));
+            const newAsteroid = Asteroid.RANDOM(seed);
+            this.asteroids.add(newAsteroid);
         }
     }
 
@@ -351,7 +357,7 @@ class State {
     private projectilePath(p: Projectile) {
         this.asteroids.forEach((a) => {
             if (a.isColliding(p.pos)) {
-                const asteroids = a.split(p.pos.norm());
+                const asteroids = a.split();
                 this.projectiles.delete(p);
                 this.asteroids.delete(a);
                 if (!asteroids) return;
